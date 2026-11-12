@@ -18,7 +18,7 @@ function syncUI(){
   $('sync-message').textContent=!ready?'Загружаем записи…':!room?'Текст пока сохранён в браузере. Создайте общий блокнот и отправьте ссылку другу.':paused?'Вы оба изменили запись. Нужно выбрать версию.':busy?'Сохраняем…':hasPending()?'Есть локальные правки · ждут отправки':'Сохранено в общем блокноте'+(lastSync?' · '+lastSync.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'');
   $('sync').textContent=!room?'Создать общий блокнот':paused?'Сравнить версии':hasPending()?'Сохранить сейчас':'Обновить';$('sync').disabled=busy||!ready;$('share').disabled=busy||!ready;$('add').disabled=!ready;
 }
-function schedule(){clearTimeout(saveTimer);if(room&&ready&&!paused)saveTimer=setTimeout(()=>sync(),1200);}
+function schedule(){clearTimeout(saveTimer);if(room&&ready&&!paused)saveTimer=setTimeout(()=>sync(),3000);}
 function changed(id,value){
   const previous=board.cards.find(c=>c.id===id)??null,base=Object.hasOwn(pending,id)?pending[id].base:clone(previous);
   if(equal(base,value))delete pending[id];else pending[id]={base,value};
@@ -125,5 +125,5 @@ async function init(){
     ready=true;persist();render();if(hasPending())schedule();
   }catch(e){render();$('sync-message').textContent=e.message;toast(e.message);}
 }
-setInterval(()=>{if(document.visibilityState==='visible')sync({background:true});},5000);
+setInterval(()=>{if(document.visibilityState==='visible')sync({background:true});},10000);
 await init();
