@@ -2,24 +2,18 @@
 <html lang="ru"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f7f8f4"><meta name="description" content="Простой общий блокнот для идей по игре">
-<title>Заметки по игре</title><link rel="icon" href="./favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script>
+<title>Заметки по игре</title><meta name="referrer" content="no-referrer"><link rel="icon" href="./favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="./styles.css"><script src="./config.js"></script><script type="module" src="./app.js"></script>
 </head><body><main>
-<header><div class="heading"><span class="mark" aria-hidden="true">✦</span><h1>Заметки по игре</h1></div><div class="actions"><button id="settings" class="secondary">GitHub</button><button id="add" class="primary">＋ Запись</button></div></header>
-<div class="save-line"><span id="sync-message" role="status">Загружаем записи…</span><button id="sync" class="text-button">Подключить</button></div>
+<header><div class="heading"><span class="mark" aria-hidden="true">✦</span><h1>Заметки по игре</h1></div><div class="actions"><button id="share" class="secondary">Поделиться</button><button id="add" class="primary">＋ Запись</button></div></header>
+<div class="save-line"><span id="sync-message" role="status">Загружаем записи…</span><button id="sync" class="text-button">Создать общий блокнот</button></div>
 <section id="notes" aria-label="Заметки"></section>
 <div id="empty" hidden><p>Пока пусто. Добавьте первую запись.</p></div>
 <footer><button id="export" class="text-button">Скачать копию</button><label class="import-label" tabindex="0" role="button">Загрузить копию<input type="file" accept=".json,application/json" id="import" hidden></label></footer>
 </main>
-<dialog id="settings-dialog"><form id="settings-form">
-  <div class="dialog-heading"><h2>Работа вдвоём</h2><button type="button" class="icon-button" id="settings-close" aria-label="Закрыть">×</button></div>
-  <p class="dialog-description">Один репозиторий — общие записи. Каждый подключается со своим GitHub-токеном и отправляет изменения, когда готов поделиться правками.</p>
-  <label class="field">Ваше имя<input id="author" maxlength="60" placeholder="Как подписывать ваши записи" required></label>
-  <label class="field">Репозиторий GitHub<input id="repo" placeholder="username/game-notes" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" required autocomplete="off"></label>
-  <label class="field">Ветка<input id="branch" value="main" required maxlength="150"></label>
-  <label class="field">Личный токен GitHub<input id="token" type="password" placeholder="Личный GitHub-токен" autocomplete="off" required></label>
-  <p class="help">Токен хранится только в памяти вкладки и отправляется только в api.github.com. После перезагрузки его нужно ввести снова. Не добавляйте его в файлы проекта.</p>
-  <details><summary>Как подключить вас обоих</summary><ol><li>Владелец репозитория добавляет друга: Settings → Collaborators.</li><li>Владелец создаёт fine-grained token для этого репозитория с разрешением Contents → Read and write.</li><li>Друг, добавленный как Collaborator в публичный репозиторий, использует свой Personal access token (classic) с областью public_repo. У этого токена доступ шире одного репозитория; задайте короткий срок действия. Для аккаунтов без ограничений fine-grained используйте токен только нужного репозитория. Подробности — в README.</li><li>Укажите здесь одинаковый репозиторий и ветку. Каждый вводит свой токен.</li></ol><p>Публичный репозиторий и опубликованный GitHub Pages видны другим. Не записывайте сюда секреты.</p></details>
-  <div id="settings-error" class="error" role="alert"></div><div class="dialog-actions"><button type="button" id="disconnect" class="secondary">Отключить</button><span class="spacer"></span><button type="submit" id="connect-submit" class="primary">Подключить</button></div>
-</form></dialog>
-<dialog id="conflicts-dialog"><div class="dialog-heading"><h2>Есть разные версии</h2><button class="icon-button" id="conflicts-close" aria-label="Закрыть">×</button></div><p class="dialog-description">Вы оба изменили одну запись. Выберите, какую версию оставить. Остальные записи объединятся автоматически.</p><div id="conflicts-list"></div><div class="dialog-actions"><button id="resolve" class="primary">Применить выбор</button></div></dialog>
+<dialog id="share-dialog"><div class="dialog-heading"><h2>Общий блокнот</h2><button class="icon-button" id="share-close" aria-label="Закрыть">×</button></div>
+<p class="dialog-description">Отправьте ссылку другу. По ней можно читать и редактировать записи без регистрации. Не публикуйте её в открытом доступе.</p>
+<label class="field">Как вас подписывать<input id="author" maxlength="60" placeholder="Ваше имя (необязательно)"></label>
+<label class="field">Ссылка для вас обоих<input id="room-link" readonly></label><div class="dialog-actions"><button id="copy-link" class="primary">Скопировать ссылку</button></div>
+</dialog>
+<dialog id="conflicts-dialog"><div class="dialog-heading"><h2>Есть разные версии</h2><button class="icon-button" id="conflicts-close" aria-label="Закрыть">×</button></div><p class="dialog-description">Вы оба изменили одну запись. Выберите версию, которую оставить. Можно скопировать текст из обеих версий.</p><div id="conflicts-list"></div><div class="dialog-actions"><button id="resolve" class="primary">Применить выбор</button></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div></body></html>
