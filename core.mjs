@@ -7,14 +7,20 @@ export const CATEGORIES = {
   world: {name:'Мир и стиль', icon:'❋', color:'#9580a2', bg:'#f1edf6'}
 };
 export const STATUSES = {idea:'Идея', discuss:'Обсудить', accepted:'Принято'};
+export const IMAGE_LIMITS={maxCount:8,maxBytes:2*1024*1024,maxDimension:1600};
+export function validatePhoto(photo){
+  if(!photo||!/^([a-f0-9]{32})$/.test(photo.id)||typeof photo.name!=='string'||photo.name.length>200||!['image/jpeg','image/png','image/webp'].includes(photo.type)||!Number.isSafeInteger(photo.size)||photo.size<1||photo.size>IMAGE_LIMITS.maxBytes||!Number.isSafeInteger(photo.width)||photo.width<1||photo.width>IMAGE_LIMITS.maxDimension||!Number.isSafeInteger(photo.height)||photo.height<1||photo.height>IMAGE_LIMITS.maxDimension)throw new Error('Неверные данные фотографии.');
+  return {id:photo.id,name:photo.name,type:photo.type,size:photo.size,width:photo.width,height:photo.height};
+}
 export function validateBoard(data) {
   if (!data || data.version !== 1 || !Array.isArray(data.cards) || data.cards.length > 5000) throw new Error('Неверный формат: нужен JSON версии 1 со списком cards (до 5000 записей).');
   const seen = new Set();
   for (const c of data.cards) {
     if (!c || typeof c.id !== 'string' || !c.id || ['__proto__','constructor','prototype'].includes(c.id) || c.id.length > 150 || seen.has(c.id) || typeof c.name !== 'string' || !c.name.trim() || c.name.length > 120 || typeof c.text !== 'string' || c.text.length > 50000 || !Object.hasOwn(CATEGORIES,c.category) || c.category === 'all' || !Object.hasOwn(STATUSES,c.status) || typeof c.author !== 'string' || c.author.length > 60 || typeof c.updatedAt !== 'string' || !Number.isFinite(Date.parse(c.updatedAt))) throw new Error('Неверные данные записи. Проверьте название, раздел, статус и дату.');
+    if(Object.hasOwn(c,'images')){if(!Array.isArray(c.images)||c.images.length>IMAGE_LIMITS.maxCount)throw new Error('В записи может быть до 8 фотографий.');const ids=new Set();for(const photo of c.images){validatePhoto(photo);if(ids.has(photo.id))throw new Error('Повтор фотографии в записи.');ids.add(photo.id);}}
     seen.add(c.id);
   }
-  return {version:1,cards:data.cards.map(c=>({id:c.id,name:c.name,category:c.category,status:c.status,text:c.text,author:c.author,updatedAt:c.updatedAt}))};
+  return {version:1,cards:data.cards.map(c=>({id:c.id,name:c.name,category:c.category,status:c.status,text:c.text,author:c.author,updatedAt:c.updatedAt,...(Object.hasOwn(c,'images')?{images:c.images.map(validatePhoto)}:{})}))};
 }
 export function equal(a,b) {return JSON.stringify(a??null) === JSON.stringify(b??null);}
 // Every edit remembers its original card. A remote edit is never silently overwritten.

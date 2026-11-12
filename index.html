@@ -4,12 +4,13 @@
 <meta name="theme-color" content="#f7f8f4"><meta name="description" content="Простой общий блокнот для идей по игре">
 <title>Заметки по игре</title><meta name="referrer" content="no-referrer"><link rel="icon" href="./favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="./styles.css"><script src="./config.js"></script><script type="module" src="./app.js"></script>
 </head><body><main>
-<header><div class="heading"><span class="mark" aria-hidden="true">✦</span><h1>Заметки по игре</h1></div><div class="actions"><button id="share" class="secondary">Поделиться</button><button id="add" class="primary">＋ Запись</button></div></header>
+<header><div class="heading"><span class="mark" aria-hidden="true">✦</span><h1>Заметки по игре</h1></div><div class="actions"><button id="share" class="secondary">Поделиться</button></div></header>
 <div class="save-line"><span id="sync-message" role="status">Загружаем записи…</span><button id="sync" class="text-button">Создать общий блокнот</button></div>
 <section id="notes" aria-label="Заметки"></section>
 <div id="empty" hidden><p>Пока пусто. Добавьте первую запись.</p></div>
 <footer><button id="export" class="text-button">Скачать копию</button><label class="import-label" tabindex="0" role="button">Загрузить копию<input type="file" accept=".json,application/json" id="import" hidden></label></footer>
 </main>
+<button id="add" class="primary floating-add" aria-label="Добавить запись">＋ Запись</button>
 <dialog id="share-dialog"><div class="dialog-heading"><h2>Общий блокнот</h2><button class="icon-button" id="share-close" aria-label="Закрыть">×</button></div>
 <p class="dialog-description">Отправьте ссылку другу. По ней можно читать и редактировать записи без регистрации. Не публикуйте её в открытом доступе.</p>
 <label class="field">Как вас подписывать<input id="author" maxlength="60" placeholder="Ваше имя (необязательно)"></label>

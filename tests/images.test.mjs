@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {validateBoard,validatePhoto,mergeChanges} from '../core.mjs';
+const original=JSON.parse(readFileSync(new URL('../data.json',import.meta.url),'utf8'));
+const photo={id:'a'.repeat(32),name:'Карта.jpg',type:'image/jpeg',size:1000,width:800,height:600};
+test('Legacy boards retain their exact data without adding empty fields',()=>{assert.deepEqual(validateBoard(original),original);});
+test('Photos survive validation and merging with independent text edits',()=>{const base=original.cards[0],withPhoto={...base,images:[photo]};const remote=structuredClone(original);remote.cards[1].text='Изменение друга';const result=mergeChanges(validateBoard(remote),{[base.id]:{base,value:validateBoard({version:1,cards:[withPhoto]}).cards[0]}});assert.equal(result.conflicts.length,0);assert.deepEqual(result.board.cards.find(c=>c.id===base.id).images,[photo]);assert.equal(result.board.cards[1].text,'Изменение друга');});
+test('Invalid photo IDs, types, sizes and duplicate attachments are rejected',()=>{for(const mutation of [{id:'https://bad.example/image'},{type:'image/svg+xml'},{size:3*1024*1024},{width:0}])assert.throws(()=>validatePhoto({...photo,...mutation}));assert.throws(()=>validateBoard({version:1,cards:[{...original.cards[0],images:[photo,photo]}]}));});
+test('Explicit removal of photos stays explicit',()=>{const board=validateBoard({version:1,cards:[{...original.cards[0],images:[]}]});assert.deepEqual(board.cards[0].images,[]);});

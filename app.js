@@ -1,8 +1,10 @@
-import {validateBoard,equal,mergeChanges} from './core.mjs';
+import {validateBoard,equal,mergeChanges,IMAGE_LIMITS,validatePhoto} from './core.mjs';
+import {preparePhoto} from './photos.mjs';
 const $=id=>document.getElementById(id),clone=x=>JSON.parse(JSON.stringify(x));
 let room=new URLSearchParams(location.hash.slice(1)).get('room')||'';
 let key=`game-notes:room:${room||'draft'}`;
 let board={version:1,cards:[]},pending={},busy=false,conflicts=[],lastSync=null,toastTimer,saveTimer,ready=false,paused=false;
+const photoCache=new Map(),uploading=new Set();
 let author='Участник';try{author=localStorage.getItem('game-notes:author')||author;}catch{}
 function node(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,6500);}
@@ -33,6 +35,42 @@ function resize(el){
   el.scrollTop=innerScroll;
   if(window.scrollX!==x||window.scrollY!==y)window.scrollTo({left:x,top:y,behavior:'instant'});
 }
+async function fetchPhoto(photo){
+  if(photoCache.has(photo.id))return photoCache.get(photo.id);
+  const promise=(async()=>{const response=await fetch(`${window.NOTES_API_ORIGIN||''}/api/photo?id=${photo.id}`,{headers:{Authorization:`Bearer ${room}`},signal:AbortSignal.timeout(20000)});if(!response.ok)throw new Error('Не удалось загрузить фото.');const blob=await response.blob();return {url:URL.createObjectURL(blob),blob};})();
+  photoCache.set(photo.id,promise);
+  try{return await promise;}catch(e){photoCache.delete(photo.id);throw e;}
+}
+function drawPhotos(grid,images=[],removable=true,noteId=null){
+  const existing=new Map([...grid.children].map(el=>[el.dataset.id,el]));const keep=new Set(images.map(p=>p.id));
+  for(const el of [...grid.children])if(!keep.has(el.dataset.id))el.remove();
+  for(const photo of images){
+    if(existing.has(photo.id))continue;
+    const fig=node('figure','photo-card');fig.dataset.id=photo.id;
+    const link=node('a','photo-open'),image=node('img');image.alt=photo.name||'Фото к записи';image.width=photo.width;image.height=photo.height;link.target='_blank';link.rel='noopener';link.append(image);
+    const caption=node('figcaption','photo-caption');caption.append(node('span','',photo.name));
+    if(removable){const remove=node('button','remove-photo','Убрать');remove.setAttribute('aria-label',`Убрать фото: ${photo.name}`);remove.onclick=()=>{if(!confirm('Убрать фото из этой записи?'))return;const card=board.cards.find(c=>c.id===noteId);if(card){changed(card.id,{...card,images:(card.images||[]).filter(p=>p.id!==photo.id),author,updatedAt:new Date().toISOString()});render();}};caption.append(remove);}
+    fig.append(link,caption);grid.append(fig);
+    fetchPhoto(photo).then(result=>{if(!fig.isConnected)return;image.src=result.url;link.href=result.url;}).catch(()=>{if(fig.isConnected)fig.prepend(node('p','photo-error','Фото пока недоступно. Обновите страницу после восстановления связи.'));});
+  }
+}
+async function uploadPhotos(id,files){
+  if(uploading.has(id))return;let card=board.cards.find(c=>c.id===id);if(!card)return;
+  if(files.length+(card.images?.length||0)>IMAGE_LIMITS.maxCount){toast('В одной записи может быть до 8 фотографий.');return;}
+  uploading.add(id);render();
+  try{
+    if(!room){await createRoom({showDialog:false});if(!room)throw new Error('Не удалось создать общий блокнот.');}
+    for(const file of files){
+      const prepared=await preparePhoto(file);
+      const response=await fetch(`${window.NOTES_API_ORIGIN||''}/api/photo`,{method:'POST',headers:{Authorization:`Bearer ${room}`,'Content-Type':prepared.blob.type},body:prepared.blob,signal:AbortSignal.timeout(30000)});
+      let data;try{data=await response.json();}catch{throw new Error('Сервер не ответил при загрузке фото.');}if(!response.ok)throw new Error(data.error||'Не удалось загрузить фото.');
+      const photo=validatePhoto({...data.photo,name:prepared.name,width:prepared.width,height:prepared.height});
+      photoCache.set(photo.id,Promise.resolve({blob:prepared.blob,url:URL.createObjectURL(prepared.blob)}));
+      card=board.cards.find(c=>c.id===id);if(!card)throw new Error('Запись уже удалена.');if((card.images?.length||0)>=IMAGE_LIMITS.maxCount)throw new Error('В записи уже 8 фотографий.');
+      changed(id,{...card,images:[...(card.images||[]),photo],author,updatedAt:new Date().toISOString()});render();
+    }
+  }catch(e){toast(e.message);}finally{uploading.delete(id);render();}
+}
 function makeNote(c){
   const article=node('article','note');article.dataset.id=c.id;
   const title=node('input','note-title');title.maxLength=120;title.placeholder='Название записи';title.setAttribute('aria-label','Название записи');
@@ -41,7 +79,10 @@ function makeNote(c){
   const edit=()=>{const previous=board.cards.find(x=>x.id===c.id);if(!previous)return;changed(c.id,{...previous,name:title.value.trim()||'Без названия',text:text.value,author,updatedAt:new Date().toISOString()});meta.textContent=author;};
   title.oninput=edit;title.onblur=()=>{if(!title.value.trim())title.value='Без названия';};text.oninput=()=>{resize(text);edit();};
   del.onclick=()=>{if(confirm('Удалить эту запись у вас обоих?')){changed(c.id,null);render();}};
-  article.append(title,text,footer);return article;
+  const grid=node('div','photo-grid'),tools=node('div','photo-tools'),attach=node('button','attach-photo','＋ Фото'),hint=node('span','photo-hint','JPG, PNG, WebP · до 8 фото'),uploadStatus=node('span','photo-status');uploadStatus.setAttribute('role','status');
+  const picker=node('input');picker.type='file';picker.accept='image/jpeg,image/png,image/webp';picker.multiple=true;picker.hidden=true;picker.setAttribute('aria-label','Прикрепить фото');
+  attach.onclick=()=>picker.click();picker.onchange=()=>{const files=[...picker.files];picker.value='';uploadPhotos(c.id,files);};tools.append(attach,hint,uploadStatus,picker);
+  article.append(title,text,grid,tools,footer);return article;
 }
 function render(){
   const container=$('notes'),x=window.scrollX,y=window.scrollY,active=document.activeElement;
@@ -64,6 +105,8 @@ function render(){
     text.setAttribute('aria-label',`Текст записи: ${c.name}`);
     article.querySelector('.delete-note').setAttribute('aria-label',`Удалить запись: ${c.name}`);
     article.querySelector('.note-footer span').textContent=c.author||'Участник';
+    drawPhotos(article.querySelector('.photo-grid'),c.images||[],true,c.id);
+    article.classList.toggle('uploading',uploading.has(c.id));article.querySelector('.attach-photo').disabled=uploading.has(c.id);article.querySelector('.photo-status').textContent=uploading.has(c.id)?'Загружаем фото…':'';
   }
   $('empty').hidden=board.cards.length>0;syncUI();
   // Reordering an existing element may blur it in some browsers. Restore only if necessary.
@@ -74,10 +117,10 @@ function render(){
   const targetY=anchor?.isConnected?y+anchor.getBoundingClientRect().top-anchorTop:y;
   if(window.scrollX!==x||window.scrollY!==targetY)window.scrollTo({left:x,top:targetY,behavior:'instant'});
 }
-async function createRoom(){
+async function createRoom({showDialog=true}={}){
   if(busy||!ready)return;busy=true;syncUI();
   const token=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');
-  try{const result=await api('POST',{board},token);room=token;location.hash=new URLSearchParams({room}).toString();key=`game-notes:room:${room}`;board=result.board;pending={};lastSync=new Date();persist();render();openShare();toast('Блокнот создан. Отправьте эту ссылку другу.');}
+  try{const result=await api('POST',{board},token);room=token;location.hash=new URLSearchParams({room}).toString();key=`game-notes:room:${room}`;board=result.board;pending={};lastSync=new Date();persist();render();if(showDialog)openShare();toast('Блокнот создан. Отправьте эту ссылку другу.');}
   catch(e){toast(e.message+' Записи остались в браузере.');}finally{busy=false;syncUI();}
 }
 function openShare(){if(!room){createRoom();return;}$('author').value=author==='Участник'?'':author;$('room-link').value=location.href;$('share-dialog').showModal();}
@@ -86,7 +129,7 @@ function showConflicts(items){
   for(const [i,c] of items.entries()){
     const container=node('section','conflict');container.append(node('h3','',c.mine?.name??c.theirs?.name??'Удалённая запись'));const options=node('div','conflict-options');
     for(const [choice,title,value] of [['theirs','Общая версия',c.theirs],['mine','Моя версия',c.mine]]){
-      const label=node('label','version'),radio=node('input');radio.type='radio';radio.name=`conflict-${i}`;radio.value=choice;radio.checked=choice==='theirs';label.append(radio,document.createTextNode(' '+title),node('pre','',value?`${value.name}\nАвтор: ${value.author}\n\n${value.text}`:'Запись удалена'));options.append(label);
+      const label=node('label','version'),radio=node('input');radio.type='radio';radio.name=`conflict-${i}`;radio.value=choice;radio.checked=choice==='theirs';label.append(radio,document.createTextNode(' '+title),node('pre','',value?`${value.name}\nАвтор: ${value.author}\nФото: ${value.images?.length||0}\n\n${value.text}`:'Запись удалена'));options.append(label);
     }
     container.append(options);$('conflicts-list').append(container);
   }
@@ -131,8 +174,30 @@ $('resolve').onclick=()=>{
   paused=false;conflicts=[];persist();render();$('conflicts-dialog').close();sync();
 };
 $('conflicts-close').onclick=()=>$('conflicts-dialog').close();
-$('export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(board,null,2)+'\n'],{type:'application/json'}));const a=node('a');a.href=url;a.download=`game-notes-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-$('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>900000)throw new Error('Файл должен быть меньше 900 КБ.');const imported=validateBoard(JSON.parse(await file.text()));if(!confirm(`Загрузить ${imported.cards.length} записей? Совпадающие по ID заменятся. Изменения будут доступны другу.`))return;for(const c of imported.cards)if(!equal(board.cards.find(x=>x.id===c.id),c))changed(c.id,c);render();}catch(e){toast(e.message);}finally{e.target.value='';}};
+$('export').onclick=async()=>{
+  const button=$('export');button.disabled=true;
+  try{
+    const snapshot=clone(board),photos=[];const seen=new Set();
+    for(const card of snapshot.cards)for(const photo of card.images||[]){if(seen.has(photo.id))continue;seen.add(photo.id);const {blob}=await fetchPhoto(photo);const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});photos.push({id:photo.id,data});}
+    const payload=photos.length?{format:'game-notes-backup',version:1,board:snapshot,photos}:snapshot;
+    const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)+'\n'],{type:'application/json'}));const a=node('a');a.href=url;a.download=`game-notes-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Копия записей и фотографий скачана.');
+  }catch(e){toast('Не удалось скачать полную копию: '+e.message);}finally{button.disabled=false;}
+};
+$('import').onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  try{
+    if(file.size>50*1024*1024)throw new Error('Файл копии должен быть меньше 50 МБ.');const payload=JSON.parse(await file.text());const imported=validateBoard(payload.format==='game-notes-backup'?payload.board:payload);
+    if(!confirm(`Загрузить ${imported.cards.length} записей? Совпадающие по ID заменятся. Изменения будут доступны другу.`))return;
+    if(payload.format==='game-notes-backup'){
+      if(!Array.isArray(payload.photos)||payload.photos.length>1000)throw new Error('Неверный список фото в копии.');
+      if(!room){await createRoom({showDialog:false});if(!room)throw new Error('Не удалось создать блокнот.');}
+      const mapping=new Map();
+      for(const entry of payload.photos){if(typeof entry.data!=='string'||entry.data.length>3*1024*1024||!/^data:image\/(jpeg|png|webp);base64,/.test(entry.data))throw new Error('Неверная фотография в копии.');const blob=await(await fetch(entry.data)).blob();const response=await fetch(`${window.NOTES_API_ORIGIN||''}/api/photo`,{method:'POST',headers:{Authorization:`Bearer ${room}`,'Content-Type':blob.type},body:blob});const result=await response.json();if(!response.ok)throw new Error(result.error||'Не удалось восстановить фото.');mapping.set(entry.id,result.photo.id);}
+      for(const card of imported.cards)if(card.images)card.images=card.images.map(photo=>{if(!mapping.has(photo.id))throw new Error('В копии отсутствует фотография.');return {...photo,id:mapping.get(photo.id)};});
+    }
+    for(const c of imported.cards)if(!equal(board.cards.find(x=>x.id===c.id),c))changed(c.id,c);render();
+  }catch(e){toast(e.message);}finally{e.target.value='';}
+};
 document.querySelector('.import-label').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('import').click();}};
 window.addEventListener('storage',e=>{if(e.key===key)toast('Другая вкладка изменила записи. Для одного блокнота используйте одну вкладку на устройстве.');});
 window.addEventListener('resize',()=>{for(const el of document.querySelectorAll('.note-text'))resize(el);});
